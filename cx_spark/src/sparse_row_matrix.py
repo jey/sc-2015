@@ -45,9 +45,7 @@ class SparseRowMatrix(object):
 
         matrix_ltimes_mapper = MatrixLtimesMapper()
         n = self.n
-        mat = self.rdd.context.broadcast(mat)
-        pd = self.rdd.mapPartitions(lambda records: matrix_ltimes_mapper(records,mat=mat.value,n=n)).filter(lambda x: x is not None).sum()
-        mat.unpersist()
+        pd = self.rdd.mapPartitions(lambda records: matrix_ltimes_mapper(records,mat=mat,n=n)).filter(lambda x: x is not None).sum()
 
         return pd
 
@@ -77,13 +75,10 @@ class SparseRowMatrix(object):
             return self.__atamat_sub(mat)
 
     def __atamat_sub(self,mat):
-        mat = self.rdd.context.broadcast(mat)
-
         n = self.n
 
         atamat_mapper = MatrixAtABMapper()
-        #b = self.rdd.mapPartitions(lambda records: atamat_mapper(records,mat=mat.value,feats=feats) ).sum()
-        b_dict = self.rdd.mapPartitions(lambda records: atamat_mapper(records,mat=mat.value,n=n) ).filter(lambda x: x is not None).reduceByKey(add).collectAsMap()
+        b_dict = self.rdd.mapPartitions(lambda records: atamat_mapper(records,mat=mat,n=n) ).filter(lambda x: x is not None).reduceByKey(add).collectAsMap()
 
         order = sorted(b_dict.keys())
         b = []
@@ -91,8 +86,6 @@ class SparseRowMatrix(object):
             b.append( b_dict[i] )
 
         b = np.vstack(b)
-
-        mat.unpersist()
 
         return b
 
