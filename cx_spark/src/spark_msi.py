@@ -1,6 +1,7 @@
 import numpy as np
 import sys, time, os, operator, csv
 import cPickle as pickle
+from bisect import bisect_left
 
 def memoize(f):
     """ Memoization decorator for functions taking one or more arguments. """
@@ -113,19 +114,36 @@ def closest_index(data, val):
     return closest(highIndex, lowIndex)
 
 
+# Note: "raw" means with empty rows/cols
 class MSIMatrix(object):
     def __init__(self, dataset):
-        self.dataset = dataset
-        self.shape = dataset.shape
+        xlen, ylen, tlen, mzlen = self.dataset_shape = dataset.shape
+        self.raw_shape = (xlen * ylen, tlen * mzlen)
 
-        def to_matrix(spectrum):
+        def to_raw_matrix(spectrum):
             x, y, t, ions = spectrum
-            r = self.to_row(x, y)
+            r = self.raw_row(x, y)
             for bucket, mz, intensity in ions:
-                c = self.to_col(t, bucket)
+                c = self.raw_col(t, bucket)
                 yield (r, c, intensity)
 
-        self.nonzeros = dataset.spectra.flatMap(to_matrix)
+        context = dataset.spectra.context
+        raw_nonzeros = dataset.spectra.flatMap(to_raw_matrix).cache()
+        seen_rows = sorted(raw_nonzeros.map(lambda (r, c, v): r).mapPartitions(set).distinct(1024).collect())
+        seen_cols = sorted(raw_nonzeros.map(lambda (r, c, v): c).mapPartitions(set).distinct(1024).collect())
+        self.seen_bcast = context.broadcast((seen_rows, seen_cols))
+        self.shape = (len(seen_rows), len(seen_cols))
+
+        def to_matrix(entry):
+            rowids, colids = self.seen_bcast.value
+            row, col, value = entry
+            newrow = bisect_left(rowids, row)
+            assert newrow != len(rowids)
+            newcol = bisect_left(colids, col)
+            assert newcol != len(colids)
+            return (newrow, newcol, value)
+
+        self.nonzeros = raw_nonzeros.map(to_matrix)
 
     def __getstate__(self):
         # don't pickle RDDs
@@ -133,23 +151,58 @@ class MSIMatrix(object):
         result['nonzeros'] = None
         return result
 
-    def to_row(self, x, y):
-        return self.shape[0]*y + x
+    def index(x, y, t, mz_idx):
+        return (self.row(x, y), self.col(t, mz_idx))
 
-    def to_col(self, t, mz_idx):
-        return self.shape[2]*mz_idx + t
+    def row(self, x, y):
+        rowids, colids = self.seen_bcast.value
+        row = bisect_left(rowids, self.raw_row(x, y))
+        assert row != len(rowids)
+        return row
+
+    def col(self, t, mz_idx):
+        rowids, colids = self.seen_bcast.value
+        col = bisect_left(colids, self.raw_col(t, mz_idx))
+        assert col != len(colids)
+        return col
+
+    def raw_row(self, x, y):
+        return self.dataset_shape[0]*y + x
+
+    def raw_col(self, t, mz_idx):
+        return self.dataset_shape[2]*mz_idx + t
 
     def cache(self):
         self.nonzeros.cache()
         return self
 
+    def save(self, path):
+        self.nonzeros.map(lambda row: ",".join(map(str, row))).saveAsTextFile(path + ".csv")
+        with file(path + ".meta", 'w') as outf:
+            pickle.dump(self, outf)
+
 
 class MSIDataset(object):
     # each entry of spectra is (x, y, t, mz_values, intensity_values)
-    def __init__(self, mz_range, spectra, shape=None):
+    def __init__(self, mz_range, spectra, shape=None, mask=None):
         self.spectra = spectra
         self.mz_range = mz_range
         self._shape = shape
+        self.mask = mask
+
+    def apply_mask(self, mask):
+        print self.shape, mask.shape
+        assert mask.dtype == np.bool_
+        assert mask.shape == (self.shape[1] + 1, self.shape[0] + 1)
+        assert not mask[:, -1].any()
+        assert not mask[-1, :].any()
+        def is_not_masked(spectrum):
+            x, y, t, ions = spectrum
+            return mask[y, x]
+        spectra = self.spectra.filter(is_not_masked)
+        if self.mask is not None:
+            mask = np.logical_and(self.mask, mask)
+        return MSIDataset(self.mz_range, self.spectra, self._shape, mask)
 
     def __getstate__(self):
         # don't pickle RDDs
@@ -182,7 +235,7 @@ class MSIDataset(object):
             x, y, t, ions = spectrum
             return x in xs and y in ys and t in ts
         # TODO: compute actual shape
-        return MSIDataset(self.mz_range, self.spectra.filter(f), self._shape)
+        return MSIDataset(self.mz_range, self.spectra.filter(f), self._shape, self.mask)
 
     def __getitem__(self, key):
         def mkrange(arg, hi):
@@ -207,7 +260,8 @@ class MSIDataset(object):
             if len(new_ions) > 0:
                 yield (x, y, t, new_ions)
         filtered = self.spectra.flatMap(f)
-        return MSIDataset(self.mz_range, filtered, self._shape)
+        return MSIDataset(self.mz_range, filtered, self._shape, self.mask)
+
 
     # Returns sum of intensities for each mz
     def histogram(self):
@@ -246,10 +300,11 @@ class MSIDataset(object):
             pickle.dump(metadata, outf)
 
     @staticmethod
-    def load(sc, path):
+    def load(sc, path, minPartitions=None):
         metadata = pickle.load(file(path + ".meta"))
-        spectra = sc.pickleFile(path + ".spectra")
-        return MSIDataset(metadata['mz_range'], spectra, metadata['shape'])
+        spectra = sc.pickleFile(path + ".spectra", minPartitions=minPartitions)
+        return MSIDataset(metadata['mz_range'], spectra, metadata['shape'], metadata.get('mask', None))
+
 
     @staticmethod
     def dump_imzml(imzMLPath, outpath, chunksz=10**5):
@@ -365,20 +420,17 @@ def converter():
 
 if __name__ == '__main__':
     # big
-    name = 'Lewis_Dalisay_Peltatum_20131115_hexandrum_1_1'
+    name = 'Lewis_Dalisay_Peltatum_20131115_hexandrum_1_1-masked'
+    # small
+    #name = '2014Nov15_PDX_IMS_imzML'
     datapath = '/scratch1/scratchdirs/jeyk/data/'
-    inpath = os.path.join(datapath, name)
-    outpath = os.path.join(os.getenv('SCRATCH'), name)
-    #MSIDataset.dump_imzml(inpath + ".imzml", outpath + ".csv")
+    inpath = os.path.join(datapath, name, name)
+    outpath = os.path.join(os.getenv('SCRATCH'), 'dev-data', name, name)
     from pyspark import SparkContext
     sc = SparkContext()
     dataset = MSIDataset.load(sc, inpath + ".rdd")
-    #dataset = dataset.select_mz_range(414.1314 + 22.99 - 0.05, 414.1314 + 22.99 + 0.05)
-    #dataset.spectra = dataset.spectra.coalesce(512)
-    dataset.cache()
-    output = {
-        'image' : dataset.image(),
-        'histogram' : dataset.histogram()
-    }
-    with open("output-%s.pickle" % os.getpid(), 'w') as outf:
-        pickle.dump(output, outf)
+    dataset = dataset[100:200, 100:200, :]
+    mat = MSIMatrix(dataset)
+    print "shape: ", mat.raw_shape, " -> ", mat.shape
+    mat.save(outpath + "-test.mat")
+    sc.stop()
