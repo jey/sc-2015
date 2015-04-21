@@ -37,7 +37,7 @@ class BlockMapper:
     def __init__(self, blk_sz=5e4):
         self.blk_sz = blk_sz
         self.keys = []
-        self.data = []
+        self.data = {'row':[],'col':[],'val':[]}
         self.sz = 0
 
     def __call__(self, records, **kwargs):
@@ -49,7 +49,7 @@ class BlockMapper:
                 for result in self.process(**kwargs):
                     yield result
                 self.keys = []
-                self.data = []
+                self.data = {'row':[],'col':[],'val':[]}
                 self.sz = 0
 
         if self.sz > 0:
@@ -78,6 +78,7 @@ def _indexed(grouped_list):
 def prepare_matrix(rdd):
     gprdd = rdd.map(lambda x:(x[0],(x[1],x[2]))).groupByKey().map(lambda x :(x[0],list(x[1])))
     flattened_rdd = gprdd.map(lambda x: (x[0],_indexed(x[1])))
+    #return flattened_rdd
     sorted_rdd = flattened_rdd.sortByKey()
     return sorted_rdd
 
