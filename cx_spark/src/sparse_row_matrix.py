@@ -88,10 +88,10 @@ class SparseRowMatrix(object):
 
         atamat_mapper = MatrixAtABMapper(direct_sum)
         if direct_sum:
-            print "using direct sum"
+            logger.info('using direct sum')
             b = self.rdd.mapPartitions(lambda records: atamat_mapper(records,mat=mat.value,n=n) ).filter(lambda x: x is not None).sum()
         else:
-            print "not using direct sum"
+            logger.info('not using direct sum')
             b_dict = self.rdd.mapPartitions(lambda records: atamat_mapper(records,mat=mat.value,n=n) ).filter(lambda x: x is not None).reduceByKey(add,numPartitions=100).collectAsMap()
             logger.info('In atamat, finish collecting results!')
 
@@ -113,7 +113,7 @@ class SparseRowMatrix(object):
 class GaussianProjectionMapper(BlockMapper):
 
     def __init__(self,direct_sum=False):
-        BlockMapper.__init__(self, 2)
+        BlockMapper.__init__(self, 50)
         self.gp = None
         self.data = {'row':[],'col':[],'val':[]}
         self.direct_sum = direct_sum
@@ -141,7 +141,7 @@ class GaussianProjectionMapper(BlockMapper):
 class MatrixAtABMapper(BlockMapper):
 
     def __init__(self,direct_sum=False):
-        BlockMapper.__init__(self, 2)
+        BlockMapper.__init__(self, 50)
         self.atamat = None
         self.data = {'row':[],'col':[],'val':[]}
         self.direct_sum = direct_sum

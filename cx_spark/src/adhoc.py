@@ -35,8 +35,8 @@ print data.take(1)
 
 matrix_A = SparseRowMatrix(data,'output', row_shape,column_shape, False)
 cx = CX(matrix_A)
-k = 5
-q = 2
+k = 6
+q = 1
 lev, p = cx.get_lev(k,axis=0, q=q) 
 #end = time.time()
 leverage_scores_file='columns_row_leverage_scores_logged'
