@@ -23,6 +23,8 @@ def parse(string):
 
 data = sc.textFile('msi_rows_matrix',500).map(lambda x:parse(x))
 
+
+
 row_shape = 131048
 column_shape = 8258911
 #131047 8258910
