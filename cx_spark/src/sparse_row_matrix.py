@@ -18,7 +18,7 @@ class SparseRowMatrix(object):
     """
 
     def __init__(self, raw_rdd, name, m, n, cache=False):
-        self.rdd = raw_rdd#prepare_matrix(raw_rdd)
+        self.rdd = raw_rdd #prepare_matrix(raw_rdd)
         self.name = name
         self.m = m
         self.n = n
@@ -52,6 +52,30 @@ class SparseRowMatrix(object):
             logger.info('In gaussian_projection, finish sorting and forming the prodcut!')
 
         return gp
+
+    def rtimes(self,mat):
+        '''
+        This code computes A*mat
+        '''
+
+        # TO-DO: check dimension compatibility
+        s1, s2 = mat.shape
+        if self.n != s1:
+            raise valueError('dimension is compatible')
+
+        mat = self.rdd.context.broadcast(mat)
+
+        matrix_rtimes_mapper = MatrixRtimesMapper()
+        n = self.n
+
+        a = self.rdd.mapPartitions(lambda records: matrix_rtimes_mapper(records,mat=mat.value,n=n) ).collect()
+        #print a
+
+        p = np.zeros((self.m,s2))
+        for k, v in a:
+            p[k,:] = v
+
+        return p
 
     def atamat(self,mat):
         """
@@ -137,6 +161,29 @@ class GaussianProjectionMapper(BlockMapper):
     def close(self):
         for r in emit_results(self.gp, self.direct_sum, axis=1):
             yield r
+
+class MatrixRtimesMapper(BlockMapper):
+
+    def __init__(self):
+        BlockMapper.__init__(self, 200)
+        #self.gp = None
+        self.data = {'row':[],'col':[],'val':[]}
+        #self.direct_sum = direct_sum
+
+    def parse(self, r):
+        self.keys.append(r[0])
+        self.data['row'] += [self.sz]*len(r[1][0])
+        self.data['col'] += r[1][0].tolist()
+        self.data['val'] += r[1][1].tolist()
+
+    def process(self, mat, n):
+        sz = len(self.keys)
+        #data = form_csr_matrix(self.data,len(self.keys),n).toarray()
+        # multiplying a scipy csr matrix with a numpy dense matrix gets something weird
+        p = form_csr_matrix(self.data,len(self.keys),n).dot(mat)
+
+        #p = np.dot(data, mat)
+        yield self.keys, p
 
 class MatrixAtABMapper(BlockMapper):
 

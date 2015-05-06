@@ -13,6 +13,7 @@ class SparseRowMatrixTestCase(unittest.TestCase):
     def setUp(self):
         self.matrix_A = SparseRowMatrix(sparse_matrix_rdd,'test_data',1000,100)
         self.matrix_A2 = SparseRowMatrix(sparse_matrix_rdd2,'test_data',100,1000)
+        #print self.matrix_A.rdd.collect()
 
     def test_size(self):
         c = self.matrix_A.rdd.count()
@@ -22,11 +23,11 @@ class SparseRowMatrixTestCase(unittest.TestCase):
         c = self.matrix_A2.rdd.count()
         self.assertEqual(c, 100)
 
-    def test_mat_ltimes(self):
-        mat = np.random.rand(10,1000)
-        p = self.matrix_A.ltimes(mat)
-        p_true = np.dot( mat,A )
-        self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
+    #def test_mat_ltimes(self):
+    #    mat = np.random.rand(10,1000)
+    #    p = self.matrix_A.ltimes(mat)
+    #    p_true = np.dot( mat,A )
+    #    self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
 
     def test_atamat(self):
         mat = np.random.rand(100,20)
@@ -34,11 +35,11 @@ class SparseRowMatrixTestCase(unittest.TestCase):
         p_true = np.dot( A.T, np.dot(A, mat) )
         self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
 
-    def test_mat_ltimes2(self):
-        mat = np.random.rand(10,100)
-        p = self.matrix_A2.ltimes(mat)
-        p_true = np.dot( mat,A2 )
-        self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
+    #def test_mat_ltimes2(self):
+    #    mat = np.random.rand(10,100)
+    #    p = self.matrix_A2.ltimes(mat)
+    #    p_true = np.dot( mat,A2 )
+    #    self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
 
     def test_atamat2(self):
         mat = np.random.rand(1000,20)
@@ -150,9 +151,9 @@ suite_list.append( loader.loadTestsFromTestCase(ComputeLeverageScoresSparseTestC
 #suite_list.append( loader.loadTestsFromTestCase(ComputeLeverageScoresTestCase) )
 suite = unittest.TestSuite(suite_list)
 
-def to_sparse(A):
-    sA = coo_matrix(A)
-    return [ (r,c,v) for (r,c,v) in zip(sA.row, sA.col, sA.data) ]
+#def to_sparse(A):
+#    sA = coo_matrix(A)
+#    return [ (r,c,v) for (r,c,v) in zip(sA.row, sA.col, sA.data) ]
 
 def compLevExact(A, k, axis):
     """ This function computes the column or row leverage scores of the input matrix.

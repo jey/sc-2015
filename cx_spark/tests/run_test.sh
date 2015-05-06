@@ -1,1 +1,2 @@
-spark-submit --driver-java-options '-Dlog4j.configuration=log4j.properties' --executor-memory 7G --driver-memory 8G --py-files ../src/rma_utils.py,../src/utils.py,../src/rowmatrix.py,../src/sparse_row_matrix.py test_cx.py 
+#spark-submit --driver-java-options '-Dlog4j.configuration=log4j.properties' --executor-memory 7G --driver-memory 8G --py-files ../src/rma_utils.py,../src/utils.py,../src/rowmatrix.py,../src/sparse_row_matrix.py test_cx.py 
+spark-submit --driver-java-options '-Dlog4j.configuration=log4j.properties' --executor-memory 7G --driver-memory 8G --py-files ../src/rma_utils.py,../src/utils.py,../src/rowmatrix.py,../src/sparse_row_matrix.py,../src/randomized_svd.py test_rpca.py 
