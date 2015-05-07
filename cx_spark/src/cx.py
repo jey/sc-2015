@@ -7,6 +7,7 @@ import numpy as np
 from numpy.linalg import norm
 
 from rma_utils import compLevExact
+from randomized_svd import RandomizedSVD
 
 
 logger = logging.getLogger(__name__)
@@ -15,37 +16,20 @@ class CX:
     def __init__(self, matrix_A):
         self.matrix_A = matrix_A
 
-    def get_lev(self, k, **kwargs):
+    def get_lev(self, k, q):
         """
         compute column leverage scores
+        the code will call randomized SVD to approximate the low-rank singular subspace first
+        and compute its leverage scores
         """
 
-        reo = 4
-        q = kwargs.get('q')
+        rsvd = RandomizedSVD(self.matrix_A)
+        U, D, V = rsvd.execute(k=k,q=q) # U*D*V.T approximates A_k
 
-        #Pi = np.random.randn(self.matrix_A.m, 2*k);
-        #B = self.matrix_A.ltimes(Pi.T).T
-        logger.info('Ready to do gaussian_projection!')
-        B = self.matrix_A.gaussian_projection(2*k).T
-        logger.info('Finish doing gaussian_projection!')
+        lev_row, p_row = compLevExact(U, k=k, axis=0)
+        lev_col, p_col = compLevExact(V, k=k, axis=0)
 
-        for i in range(q):
-            logger.info('Computing leverage scores, at iteration {0}!'.format(i+1))
-            print 'Computing leverage scores, at iteration {0}!'.format(i+1)
-            if i % reo == reo-1:
-                logger.info("Reorthogonalzing!")
-                Q, R = np.linalg.qr(B)
-                B = Q
-                logger.info("Done reorthogonalzing!")
-            B = self.matrix_A.atamat(B)
-            print 'Finish iteration {0}!'.format(i+1)
-
-        logger.info('Ready to compute the leverage scores locally!')
-        lev, self.p = compLevExact(B, k, 0)
-        self.lev = self.p*k
-        logger.info('Done!')
-
-        return self.lev, self.p
+        return lev_row, lev_col, p_row, p_col
 
     def comp_idx(self, scheme='deterministic', r=10):
         #seleting rows based on self.lev

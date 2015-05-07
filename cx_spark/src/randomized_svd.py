@@ -41,5 +41,12 @@ class RandomizedSVD:
         U_hat,D,V = np.linalg.svd(B,full_matrices=0)
         U = np.dot(Q,U_hat)
 
+        # this function is actually finding the SVD of A.T
+        # so we need to swap U and V
+        temp = U
+        U = V.T
+        V = temp
+        # U * D * V.T will be a good approximation to A_k
+
         return U, D, V
 

@@ -13,7 +13,6 @@ class SparseRowMatrixTestCase(unittest.TestCase):
     def setUp(self):
         self.matrix_A = SparseRowMatrix(sparse_matrix_rdd,'test_data',1000,100)
         self.matrix_A2 = SparseRowMatrix(sparse_matrix_rdd2,'test_data',100,1000)
-        #print self.matrix_A.rdd.collect()
 
     def test_size(self):
         c = self.matrix_A.rdd.count()
@@ -47,28 +46,30 @@ class SparseRowMatrixTestCase(unittest.TestCase):
         p_true = np.dot( A2.T, np.dot(A2, mat) )
         self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
 
+    def test_mat_rtimes(self):
+        mat = np.random.rand(100,50)
+        p = self.matrix_A.rtimes(mat)
+        p_true = np.dot( A, mat )
+        self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
+
 class ComputeLeverageScoresSparseTestCase(unittest.TestCase):
     def setUp(self):
         self.matrix_A = SparseRowMatrix(sparse_matrix_rdd,'test_data',1000,100)
-        self.matrix_A2 = SparseRowMatrix(sparse_matrix_rdd2,'test_data',100,1000)
+        #self.matrix_A2 = SparseRowMatrix(sparse_matrix_rdd2,'test_data',100,1000)
 
-    def test_col_lev(self):
+    def test_lev(self):
         cx = CX(self.matrix_A)
-        lev, p = cx.get_lev(5, q=10)
-        lev_exact, p_exact = compLevExact(A, 5, axis=1)
-        print scipy.stats.entropy(p_exact,p)
+        lev_row, lev_col, p_row, p_col = cx.get_lev(k=5, q=10)
 
-        self.assertEqual(len(lev), 100)
+        lev_col_exact, p_col_exact = compLevExact(A, 5, axis=1)
+        lev_row_exact, p_row_exact = compLevExact(A, 5, axis=0)
 
-    def test_col_lev2(self):
-        cx = CX(self.matrix_A2)
-        lev, p = cx.get_lev(10, q=10)
-        lev_exact, p_exact = compLevExact(A2, 10, axis=1)
-        print scipy.stats.entropy(p_exact,p)
+        print scipy.stats.entropy(p_col_exact,p_col)
+        print scipy.stats.entropy(p_row_exact,p_row)
 
-        self.assertEqual(len(lev), 1000)
+        self.assertEqual(len(lev_row), 1000)
+        self.assertEqual(len(lev_col), 100)
 
-        
 class MatrixMultiplicationTestCase(unittest.TestCase):
     def setUp(self):
         self.matrix_A = RowMatrix(matrix_rdd,'test_data',1000,100)
@@ -150,10 +151,6 @@ suite_list.append( loader.loadTestsFromTestCase(ComputeLeverageScoresSparseTestC
 #suite_list.append( loader.loadTestsFromTestCase(MatrixMultiplicationTestCase) )
 #suite_list.append( loader.loadTestsFromTestCase(ComputeLeverageScoresTestCase) )
 suite = unittest.TestSuite(suite_list)
-
-#def to_sparse(A):
-#    sA = coo_matrix(A)
-#    return [ (r,c,v) for (r,c,v) in zip(sA.row, sA.col, sA.data) ]
 
 def compLevExact(A, k, axis):
     """ This function computes the column or row leverage scores of the input matrix.

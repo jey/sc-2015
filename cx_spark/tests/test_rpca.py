@@ -9,16 +9,29 @@ from rma_utils import to_sparse
 class RandomizedSVDTestCase(unittest.TestCase):
     def setUp(self):
         self.matrix_A = SparseRowMatrix(sparse_matrix_rdd,'test_data',1000,100)
+        self.matrix_A2 = SparseRowMatrix(sparse_matrix_rdd2,'test_data',100,1000)
 
     def test_rpca(self):
         rpca = RandomizedSVD(self.matrix_A)
-        U,D,V = rpca.execute(k=10,q=5)
 
-        print U.shape, V.shape, D.shape
+        k = 10
+        U,D,V = rpca.execute(k=k,q=5)
 
-        print np.dot( U.T, U )
+        D0 = np.linalg.svd(A, full_matrices=False,compute_uv=False)
+        print "||A-Ak|| = {0}".format(D0[k])
+        print "||A-\hat Ak|| = {0}".format( np.linalg.norm( A - np.dot(U,np.dot(np.diag(D),V.T)),2) )
 
-        self.assertTrue( U.shape == (1000,20) )
+        self.assertTrue( U.shape == (1000,2*k) )
+        self.assertTrue( V.shape == (100,2*k) )
+        self.assertTrue( D.shape == (2*k,) )
+
+    #def test_rpca2(self):
+    #    rpca = RandomizedSVD(self.matrix_A2)
+    #    U,D,V = rpca.execute(k=10,q=5)
+
+    #    self.assertTrue( U.shape == (100,20) )
+    #    self.assertTrue( V.shape == (1000,20) )
+    #    self.assertTrue( D.shape == (20,) )
 
 class MatrixMultiplicationTestCase(unittest.TestCase):
     def setUp(self):
@@ -40,7 +53,7 @@ suite = unittest.TestSuite(suite_list)
 if __name__ == '__main__':
     from pyspark import SparkContext
 
-    A = np.loadtxt('../data/unif_bad_1000_100.txt')
+    A = np.loadtxt('../data/unif_good_1000_100.txt')
     A2 = np.loadtxt('../data/unif_bad_100_1000.txt')
     sA = to_sparse(A)
     sA2 = to_sparse(A2)
