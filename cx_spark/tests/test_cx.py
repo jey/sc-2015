@@ -10,6 +10,10 @@ from cx import CX
 import scipy.stats
 
 class SparseRowMatrixTestCase(unittest.TestCase):
+    '''
+    testing sparse row matrix class
+    '''
+
     def setUp(self):
         self.matrix_A = SparseRowMatrix(sparse_matrix_rdd,'test_data',1000,100)
         self.matrix_A2 = SparseRowMatrix(sparse_matrix_rdd2,'test_data',100,1000)
@@ -53,6 +57,10 @@ class SparseRowMatrixTestCase(unittest.TestCase):
         self.assertTrue( np.linalg.norm(p-p_true)/np.linalg.norm(p_true) < 1e-5 )
 
 class ComputeLeverageScoresSparseTestCase(unittest.TestCase):
+    '''
+    testing computing leverage scores using sparse matrix representation
+    '''
+    
     def setUp(self):
         self.matrix_A = SparseRowMatrix(sparse_matrix_rdd,'test_data',1000,100)
         #self.matrix_A2 = SparseRowMatrix(sparse_matrix_rdd2,'test_data',100,1000)

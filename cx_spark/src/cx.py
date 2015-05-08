@@ -19,15 +19,18 @@ class CX:
     def get_lev(self, k, q):
         """
         compute column leverage scores
-        the code will call randomized SVD to approximate the low-rank singular subspace first
-        and compute its leverage scores
+        the code calls randomized SVD to approximate the low-rank singular subspace first
+        and computes leverage scores of the approximation
         """
 
         rsvd = RandomizedSVD(self.matrix_A)
         U, D, V = rsvd.execute(k=k,q=q) # U*D*V.T approximates A_k
 
+        # computing leverage scores of the approximation of A_k
+        logger.info("Ready to compute leverage scores of the approximation!")
         lev_row, p_row = compLevExact(U, k=k, axis=0)
         lev_col, p_col = compLevExact(V, k=k, axis=0)
+        logger.info("Finished computing leverage scores!")
 
         return lev_row, lev_col, p_row, p_col
 

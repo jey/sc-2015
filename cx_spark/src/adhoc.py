@@ -12,40 +12,41 @@ import ast
 import numpy as np
 import logging.config
 import logging
-#logging.config.fileConfig('logging.conf',disable_existing_loggers=False)
-logging.config.fileConfig('logging.conf', disable_existing_loggers=False) 
+
+logging.config.fileConfig('logging.cfg', disable_existing_loggers=False) 
 logger = logging.getLogger(__name__)
+
 def parse(string):
     s = str(string)
     val = ast.literal_eval(s)
     return val[0], (np.array(val[1][0]), np.array(val[1][1]))
 
+data = sc.textFile('msi_data',500).map(lambda x:parse(x))
 
-data = sc.textFile('msi_rows_matrix',500).map(lambda x:parse(x))
-
-
-
-row_shape = 131048
-column_shape = 8258911
+#row_shape = 131048
+#column_shape = 8258911
 #131047 8258910
-#row_shape = 8258911
-#column_shape =131048
+row_shape = 8258911
+column_shape = 131048
 #column_shape+=20
 
 print data.take(1)
 #print data.count()
 
-matrix_A = SparseRowMatrix(data,'output', row_shape,column_shape, False)
+matrix_A = SparseRowMatrix(data, 'output', row_shape, column_shape, False)
 cx = CX(matrix_A)
-k = 6
-q = 1
-lev, p = cx.get_lev(k,axis=0, q=q) 
+k = 15
+q = 4
+lev_row, lev_col, p_row, p_col = cx.get_lev(k=k, q=q) 
 #end = time.time()
-leverage_scores_file='columns_row_leverage_scores_logged'
-p_score_file='columns_p_scores_logged'
-np.savetxt(leverage_scores_file, np.array(lev))
-np.savetxt(p_score_file, np.array(p))
-
+row_leverage_scores_file='row_leverage_scores_logged'
+row_p_scores_file='row_p_scores_logged'
+col_leverage_scores_file='col_leverage_scores_logged'
+col_p_scores_file='col_p_scores_logged'
+np.savetxt(row_leverage_scores_file, np.array(lev_row))
+np.savetxt(row_p_scores_file, np.array(p_row))
+np.savetxt(col_leverage_scores_file, np.array(lev_col))
+np.savetxt(col_p_scores_file, np.array(p_col))
 
 
 """

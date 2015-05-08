@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class SparseRowMatrix(object):
     """
     A sparse row matrix class
-    Each record is of the format: (row_idx, column_id, val)
+    Each record is of the format: (row_idx, column_idx, val)
     """
 
     def __init__(self, raw_rdd, name, m, n, cache=False):
@@ -89,10 +89,10 @@ class SparseRowMatrix(object):
 
         [n,c] = mat.shape
 
-        if n*c > 1e4: # the size of mat is too large to broadcast
+        if n*c > 1e8: # the size of mat is too large to broadcast
             b = []
             #mini_batch_sz = 1e8/n # make sure that each mini batch has less than 1e8 elements
-            mini_batch_sz = 4
+            mini_batch_sz = 1e6
             start_idx = np.arange(0, c, mini_batch_sz)
             end_idx = np.append(np.arange(mini_batch_sz, c, mini_batch_sz), c)
 
