@@ -3,7 +3,7 @@ import logging
 import numpy as np
 from pyspark.storagelevel import StorageLevel 
 from rma_utils import add_index
-from rma_utils import convert_rdd 
+from rma_utils import convert_rdd
 from rma_utils import form_csr_matrix
 from utils import BlockMapper, add
 from utils import prepare_matrix
@@ -126,6 +126,8 @@ class SparseRowMatrix(object):
 
             b = np.vstack(b)
             logger.info('In atamat, finish sorting and forming the prodcut!')
+
+    
 
         #mat.unpersist()
 
