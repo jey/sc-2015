@@ -116,26 +116,33 @@ def closest_index(data, val):
 
 # Note: "raw" means with empty rows/cols
 class MSIMatrix(object):
-    def __init__(self, dataset):
-        xlen, ylen, tlen, mzlen = self.dataset_shape = dataset.shape
-        self.raw_shape = (xlen * ylen, tlen * mzlen)
+    def __init__(self, dataset_shape, raw_shape, shape, seen_bcast, nonzeros):
+        self.dataset_shape = dataset_shape
+        self.raw_shape = raw_shape
+        self.shape = shape
+        self.seen_bcast = seen_bcast
+        self.nonzeros = nonzeros
+
+    @staticmethod
+    def from_dataset(sc, dataset):
+        xlen, ylen, tlen, mzlen = dataset.shape
+        raw_shape = (xlen * ylen, tlen * mzlen)
 
         def to_raw_matrix(spectrum):
             x, y, t, ions = spectrum
-            r = self.raw_row(x, y)
+            r = y * xlen + x
             for bucket, mz, intensity in ions:
-                c = self.raw_col(t, bucket)
+                c = bucket * tlen + t
                 yield (r, c, intensity)
 
-        context = dataset.spectra.context
-        raw_nonzeros = dataset.spectra.flatMap(to_raw_matrix).cache()
-        seen_rows = sorted(raw_nonzeros.map(lambda (r, c, v): r).mapPartitions(set).distinct(1024).collect())
-        seen_cols = sorted(raw_nonzeros.map(lambda (r, c, v): c).mapPartitions(set).distinct(1024).collect())
-        self.seen_bcast = context.broadcast((seen_rows, seen_cols))
-        self.shape = (len(seen_rows), len(seen_cols))
+        raw_nonzeros = dataset.spectra.flatMap(to_raw_matrix)
+        seen_rows = sorted(raw_nonzeros.map(lambda (r, c, v): r).mapPartitions(set).distinct().collect())
+        seen_cols = sorted(raw_nonzeros.map(lambda (r, c, v): c).mapPartitions(set).distinct().collect())
+        seen_bcast = sc.broadcast((seen_rows, seen_cols))
+        shape = (len(seen_rows), len(seen_cols))
 
         def to_matrix(entry):
-            rowids, colids = self.seen_bcast.value
+            rowids, colids = seen_bcast.value
             row, col, value = entry
             newrow = bisect_left(rowids, row)
             assert newrow != len(rowids)
@@ -143,7 +150,8 @@ class MSIMatrix(object):
             assert newcol != len(colids)
             return (newrow, newcol, value)
 
-        self.nonzeros = raw_nonzeros.map(to_matrix)
+        nonzeros = raw_nonzeros.map(to_matrix)
+        return MSIMatrix(dataset.shape, raw_shape, shape, seen_bcast, nonzeros)
 
     def __getstate__(self):
         # don't pickle RDDs
@@ -176,10 +184,35 @@ class MSIMatrix(object):
         self.nonzeros.cache()
         return self
 
-    def save(self, path):
-        self.nonzeros.map(lambda row: ",".join(map(str, row))).saveAsTextFile(path + ".csv")
-        with file(path + ".meta", 'w') as outf:
-            pickle.dump(self, outf)
+    def save(self, csvpath, metapath, name):
+        self.nonzeros. \
+            map(lambda entry: ",".join(map(str, entry))). \
+            saveAsTextFile(os.path.join(csvpath, name + ".mat.csv"))
+        metadata = {
+            'dataset_shape' : self.dataset_shape,
+            'raw_shape' : self.raw_shape,
+            'shape' : self.shape,
+            'seen' : self.seen_bcast.value
+        }
+        with file(os.path.join(metapath, name + ".mat.meta"), 'w') as outf:
+            pickle.dump(metadata, outf)
+
+    @staticmethod
+    def load(sc, csvpath, metapath, name):
+        with file(os.path.join(metapath, name + ".mat.meta")) as inf:
+            meta = pickle.load(inf)
+        def parse_nonzero(line):
+            row, col, value = line.split(',')
+            return (int(row), int(col), float(value))
+        nonzeros = sc.textFile(os.path.join(csvpath, name + ".mat.csv")).map(parse_nonzero)
+        seen_bcast = sc.broadcast(meta['seen'])
+        result = MSIMatrix(
+                meta['dataset_shape'],
+                meta['raw_shape'],
+                meta['shape'],
+                seen_bcast,
+                nonzeros)
+        return result
 
 
 class MSIDataset(object):
@@ -203,6 +236,40 @@ class MSIDataset(object):
         if self.mask is not None:
             mask = np.logical_and(self.mask, mask)
         return MSIDataset(self.mz_range, self.spectra, self._shape, mask)
+
+    def smooth_targeted(self, mz_target, mz_stddev, tol=0.01):
+        mz_axis = self.mz_axis
+        idx = bisect_left(mz_axis, mz_target)
+        bucket_width = (mz_axis[idx + 1] - mz_axis[idx - 1]) / 2.0
+        return self.smooth(mz_stddev / bucket_width, tol)
+
+    def smooth(self, stddev=100, tol=0.01):
+        """
+        Smoothes each spectrum by applying a Gaussian filter.
+        Note that stddev is given in terms of buckets, even though the mz_axis has a log scale.
+        Smoothed values above tol are kept.
+        """
+        from scipy import signal, stats
+        mz_len = len(self.mz_axis)
+        # apply monkeypatch to speed up fftconvolve()
+        import pyfftw
+        signal.signaltools.fftn = pyfftw.interfaces.scipy_fftpack.fftn
+        signal.signaltools.ifftn = pyfftw.interfaces.scipy_fftpack.ifftn
+        # truncate kernel at 4 sigma
+        kernel = signal.gaussian(8 * stddev, stddev)
+        def smooth_one(spectrum):
+            x, y, t, ions = spectrum
+            values = np.zeros((mz_len,))
+            for bucket, mz, intensity in ions:
+                values[bucket] = intensity
+            values = signal.fftconvolve(values, kernel, mode='same')
+            assert (values >= -1e-4).all()
+            def make_ions():
+                for bucket in np.flatnonzero(values >= tol):
+                    yield (bucket, self.mz_axis[bucket], values[bucket])
+            return (x, y, t, list(make_ions()))
+        smoothed_spectra = self.spectra.map(smooth_one)
+        return MSIDataset(self.mz_range, smoothed_spectra, self._shape, self.mask)
 
     def __getstate__(self):
         # don't pickle RDDs
@@ -262,15 +329,15 @@ class MSIDataset(object):
         filtered = self.spectra.flatMap(f)
         return MSIDataset(self.mz_range, filtered, self._shape, self.mask)
 
-
     # Returns sum of intensities for each mz
     def histogram(self):
         def f(spectrum):
             x, y, t, ions = spectrum
             for bucket, mz, intensity in ions:
-                yield mz, intensity
+                yield bucket, intensity
         results = self.spectra.flatMap(f).reduceByKey(operator.add).sortByKey().collect()
-        return zip(*results)
+        buckets, values = zip(*results)
+        return (self.mz_axis[np.array(buckets)], values)
 
     def intensity_vs_time(self):
         def f(spectrum):
@@ -293,18 +360,17 @@ class MSIDataset(object):
         self.spectra.cache()
         return self
 
-    def save(self, path):
-        self.spectra.saveAsPickleFile(path + ".spectra")
+    def save(self, metapath, rddpath):
+        self.spectra.saveAsPickleFile(rddpath + ".spectra")
         metadata = { 'mz_range' : self.mz_range, 'shape' : self.shape }
-        with file(path + ".meta", 'w') as outf:
+        with file(metapath + ".meta", 'w') as outf:
             pickle.dump(metadata, outf)
 
     @staticmethod
-    def load(sc, path, minPartitions=None):
-        metadata = pickle.load(file(path + ".meta"))
-        spectra = sc.pickleFile(path + ".spectra", minPartitions=minPartitions)
+    def load(sc, metapath, rddpath, minPartitions=None):
+        metadata = pickle.load(file(metapath + ".rdd.meta"))
+        spectra = sc.pickleFile(rddpath + ".rdd.spectra", minPartitions=minPartitions)
         return MSIDataset(metadata['mz_range'], spectra, metadata['shape'], metadata.get('mask', None))
-
 
     @staticmethod
     def dump_imzml(imzMLPath, outpath, chunksz=10**5):
