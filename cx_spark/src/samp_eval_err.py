@@ -44,16 +44,22 @@ logger.info('Finish loading! Its shape is {0}'.format(row_p.shape))
 
 cx = CX(matrix_A)
 
-scheme = 'deterministic'
-r = 20
+schemes = ['deterministic', 'randomized']
+rs = [5,10,30,40,60,70,80,100,120]
 
-R_filename = 'R_files/' + 'R_' + scheme + '_' + str(r) + '.txt'
+#scheme = 'deterministic'
+#r = 20
 
-if os.path.isfile(R_filename):
-    logger.info('Found existing R file, loading them!')
-    R = np.loadtxt(R_filename)
+for scheme in schemes:
+  for r in rs:
 
-else:
+    R_filename = 'R_files/' + 'R_' + scheme + '_' + str(r) + '.txt'
+
+    if os.path.isfile(R_filename):
+    	logger.info('Found existing R file, loading them!')
+    	R = np.loadtxt(R_filename)
+
+    else:
 	logger.info('Getting row indices!')
 	logger.info('Using {0}, number of rows to sample is {1}'.format( scheme, r ))
 	idx = cx.comp_idx(row_p, scheme = scheme, r = r)
@@ -62,11 +68,11 @@ else:
 	logger.info('Getting rows!')
 	R = cx.get_rows(idx)
 	logger.info('Saving rows!')
-	R = np.savetxt(R_filename)
+	np.savetxt(R_filename, R)
 
-logger.info('Computing relative err using R!')
-relative_err = cx.comp_err(R)
-logger.info('Relative error is {0}!'.format(relative_err))
+    logger.info('Computing relative err using R!')
+    relative_err = cx.comp_err(R)
+    logger.info('Relative error is {0}!'.format(relative_err))
 
 
 
