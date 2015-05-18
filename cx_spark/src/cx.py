@@ -33,7 +33,7 @@ class CX:
         lev_col, p_col = compLevExact(V, k=k, axis=0)
         logger.info("Finished computing leverage scores!")
 
-        return lev_row, lev_col, p_row, p_col
+        return lev_row, lev_col, p_row, p_col, U, D, V
 
     def comp_idx(self, p, scheme='deterministic', r=10):
         #seleting rows based on p
@@ -70,31 +70,34 @@ class CX:
 
         return R  #shape of R is r by d
 
-    def comp_err(self, R):
+    def comp_err(self, R, Va):
         #computing the reconstruction error
 
         n = self.matrix_A.n
         print R.shape
 
         # assuming the matrix is tall
-        U, D, V = np.linalg.svd(R, full_matrices=False)
+        Ur, Dr, Vr = np.linalg.svd(R, full_matrices=False)
+        Vr = Vr.T
 
-        print V.shape # shape of V should be r by d
-        V = self.matrix_A.rdd.context.broadcast(V)
+        print Vr.shape # shape of V should be d by r
+        Vr = self.matrix_A.rdd.context.broadcast(Vr)
+        Va = self.matrix_A.rdd.context.broadcast(Va)
 
         cnm = comp_norm_mapper()
-        sum_norms = self.matrix_A.rdd.mapPartitions(lambda records: cnm(records, V=V.value, n=n)).sum()
+        sum_norms = self.matrix_A.rdd.mapPartitions(lambda records: cnm(records, Vr=Vr.value, Va=Va.value, n=n)).sum()
 
-        relative_err = np.sqrt( sum_norms[1]/sum_norms[0] )
+        relative_err_c = np.sqrt( sum_norms[1]/sum_norms[0] )
+        relative_err_k = np.sqrt( sum_norms[2]/sum_norms[0] )
 
-        return relative_err
+        return relative_err_c, relative_err_k
 
 class comp_norm_mapper(BlockMapper):
 
     def __init__(self):
         BlockMapper.__init__(self, 500)
         self.data = {'row':[],'col':[],'val':[]}
-        self.results = np.zeros(2)
+        self.results = np.zeros(3)
 
     def parse(self, r):
         self.keys.append(r[0])
@@ -102,14 +105,15 @@ class comp_norm_mapper(BlockMapper):
         self.data['col'] += r[1][0].tolist()
         self.data['val'] += r[1][1].tolist()
 
-    def process(self, V, n):
+    def process(self, Vr, Va, n):
 
         data = form_csr_matrix(self.data,len(self.keys),n).toarray()
 
         a = np.linalg.norm(data, 'fro')**2
-        b = np.linalg.norm( data - np.dot( np.dot(data, V.T), V), 'fro')**2
+        b = np.linalg.norm( data - np.dot( np.dot(data, Vr), Vr.T), 'fro')**2
+        c = np.linalg.norm( data - np.dot( np.dot( np.dot( np.dot(data,Va), Va.T), Vr), Vr.T), 'fro')**2
 
-        self.results += np.array([a,b])
+        self.results += np.array([a,b,c])
 
         return iter([])
 

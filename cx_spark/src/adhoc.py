@@ -37,7 +37,7 @@ matrix_A = SparseRowMatrix(data, 'output', row_shape, column_shape, False)
 cx = CX(matrix_A)
 k = 15
 q = 4
-lev_row, lev_col, p_row, p_col = cx.get_lev(k=k, q=q) 
+lev_row, lev_col, p_row, p_col, U, D, V = cx.get_lev(k=k, q=q) 
 #end = time.time()
 row_leverage_scores_file='row_leverage_scores_logged'
 row_p_scores_file='row_p_scores_logged'
@@ -47,6 +47,10 @@ np.savetxt(row_leverage_scores_file, np.array(lev_row))
 np.savetxt(row_p_scores_file, np.array(p_row))
 np.savetxt(col_leverage_scores_file, np.array(lev_col))
 np.savetxt(col_p_scores_file, np.array(p_col))
+
+np.savetxt('apprx_U_k'+str(k)+'_q'+str(q), np.array(U))
+np.savetxt('apprx_D_k'+str(k)+'_q'+str(q), np.array(D))
+np.savetxt('apprx_V_k'+str(k)+'_q'+str(q), np.array(V))
 
 
 """

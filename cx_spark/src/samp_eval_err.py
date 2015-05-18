@@ -42,16 +42,27 @@ logger.info('Loading p values!')
 row_p = np.loadtxt( '../results/row_p_scores_logged' )
 logger.info('Finish loading! Its shape is {0}'.format(row_p.shape))
 
+logger.info('Loading V_k matrix!')
+Va = np.loadtxt( 'apprx_V_k15_q4' )
+Va = Va[:,:15]
+logger.info('Finish loading! Its shape is {0}'.format(Va.shape))
+
+
+
 cx = CX(matrix_A)
 
-schemes = ['deterministic', 'randomized']
-rs = [5,10,30,40,60,70,80,100,120]
+#schemes = ['deterministic', 'randomized']
+schemes = ['randomized']
+rs = [5,10,20,30,40,50,60,70,80,90,100,110,120]
 
 #scheme = 'deterministic'
 #r = 20
 
 for scheme in schemes:
   for r in rs:
+
+    logger.info('----------------------------------------')
+    logger.info('Working on case where scheme is {0}, r is {1}!'.format(scheme, r))
 
     R_filename = 'R_files/' + 'R_' + scheme + '_' + str(r) + '.txt'
 
@@ -71,8 +82,9 @@ for scheme in schemes:
 	np.savetxt(R_filename, R)
 
     logger.info('Computing relative err using R!')
-    relative_err = cx.comp_err(R)
-    logger.info('Relative error is {0}!'.format(relative_err))
+    relative_err_c, relative_err_k = cx.comp_err(R, Va)
+    logger.info('Relative error with rank c is {0}!'.format(relative_err_c))
+    logger.info('Relative error with rank k is {0}!'.format(relative_err_k))
 
 
 
